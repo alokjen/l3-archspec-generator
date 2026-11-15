@@ -1,0 +1,76 @@
+{
+  "name": "l3-archspec-generator",
+  "displayName": "L3 Architecture Spec Generator",
+  "description": "Generates L3 domain architecture specifications with the l3-domain-architecture-spec skill, using Claude models through GitHub Copilot.",
+  "version": "0.2.0",
+  "publisher": "local-enterprise-architecture",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "l3spec.open",
+        "title": "Open",
+        "category": "L3 Spec Generator"
+      },
+      {
+        "command": "l3spec.selectModel",
+        "title": "Choose model",
+        "category": "L3 Spec Generator"
+      },
+      {
+        "command": "l3spec.showTools",
+        "title": "Show available MCP tools",
+        "category": "L3 Spec Generator"
+      }
+    ],
+    "configuration": {
+      "title": "L3 Spec Generator",
+      "properties": {
+        "l3spec.model": {
+          "type": "string",
+          "default": "",
+          "description": "Copilot model to use (its id, family or name). Leave empty to use the first available Claude model. Use the 'L3 Spec Generator: Choose model' command to pick from the list."
+        },
+        "l3spec.tools.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let the model find and call tools registered in VS Code (for example BAM or enterprise NFR standards MCP servers) while generating the specification."
+        },
+        "l3spec.tools.allow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Optional: only offer MCP tools whose names match one of these regular expressions (for example \"^mcp_bam_\" or \"nfr\"). Leave empty to offer all MCP tools."
+        },
+        "l3spec.tools.maxRounds": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "description": "Maximum rounds of MCP tool calls in one generation step before the model must finish its reply."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node build.js",
+    "package": "node build.js && vsce package --allow-missing-repository --skip-license -o l3-archspec-generator.vsix"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.0",
+    "dompurify": "3.1.6",
+    "marked": "12.0.2",
+    "mermaid": "^11.4.0"
+  }
+}

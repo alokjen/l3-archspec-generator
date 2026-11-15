@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L3 Architecture Spec Generator</title>
+<link rel="stylesheet" href="css/styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>L3 Architecture Spec Generator</h1>
+    <p class="sub">Runs the <code>l3-domain-architecture-spec</code> skill phase by phase. Nothing is assumed: missing input stops the run.</p>
+  </div>
+  <div class="topbar-actions">
+    <span id="connStatus" class="conn conn-wait">Connecting to Claude…</span>
+    <button id="resetBtn" class="btn btn-ghost" type="button">Start over</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Progress tracker -->
+  <nav class="tracker" aria-label="Progress">
+    <h2>Progress</h2>
+    <ol id="trackerList"></ol>
+    <div class="legend">
+      <span><i class="dot s-not_started"></i>Not started</span>
+      <span><i class="dot s-generating"></i>Generating</span>
+      <span><i class="dot s-needs_input"></i>Needs your input</span>
+      <span><i class="dot s-review"></i>Ready for review</span>
+      <span><i class="dot s-approved"></i>Approved</span>
+    </div>
+    <button id="viewDocBtn" class="btn btn-ghost full" type="button" disabled>View full specification</button>
+  </nav>
+
+  <main id="main">
+    <!-- Intake form (Phase 0 input) -->
+    <section id="intakeView" class="card">
+      <h2>Architect context</h2>
+      <p class="hint">Fields marked <span class="req">*</span> are required before generation can start. Paste or attach as much source material as you can — the skill will only use what you provide.</p>
+      <div id="sampleBar" class="sample-bar" hidden>
+        <span>Want to try the page first? Fill the form with a fictional example.</span>
+        <button id="loadSampleBtn" class="btn" type="button">Load sample data</button>
+      </div>
+      <div id="sampleMsg" class="alert alert-info" hidden></div>
+      <label id="autoAnswerWrap" class="auto-toggle" hidden>
+        <input type="checkbox" id="autoAnswerChk" checked>
+        <span><strong>Auto-answer the skill's questions</strong> (sample testing only). When a phase pauses, Claude answers as the fictional domain owner with specific values, never TBC, and the phase continues. Only available while the sample is loaded unchanged.</span>
+      </label>
+      <form id="intakeForm" novalidate>
+        <div class="grid2">
+          <label>L3 domain name <span class="req">*</span>
+            <span class="hint">The domain this specification covers.</span>
+            <input name="domainName" placeholder="e.g. Claims Management">
+          </label>
+          <label>Parent L4 domain <span class="req">*</span>
+            <span class="hint">The L4 domain this L3 domain belongs to.</span>
+            <input name="parentL4" placeholder="e.g. Policy &amp; Claims Operations">
+          </label>
+        </div>
+        <label>Scope boundary (in scope / out of scope) <span class="req">*</span>
+          <textarea name="scope" rows="3"></textarea>
+        </label>
+        <label>Business drivers, strategic objectives, target-state horizon <span class="req">*</span>
+          <textarea name="drivers" rows="3"></textarea>
+        </label>
+        <label>Stakeholders (domain owner, sponsor, key consumers)
+          <textarea name="stakeholders" rows="2"></textarea>
+        </label>
+        <label>Source material and domain knowledge <span class="req">*</span>
+          <span class="hint">The L2 business capabilities in this L3 domain, application inventory, integrations, data entities, NFR baselines, roadmap, principles…</span>
+          <textarea name="sources" rows="10"></textarea>
+        </label>
+        <label class="file">Attach text files (.txt, .md, .csv, .json, .mmd)
+          <input id="fileInput" type="file" multiple accept=".txt,.md,.csv,.json,.mmd,.tsv,.yaml,.yml,.xml">
+        </label>
+        <ul id="fileList" class="filelist"></ul>
+        <label>Additional conventions
+          <span class="hint">Applied automatically, so no need to enter them: TOGAF, TIME dispositions, the Wells Fargo Capability Model (WFCM), Markdown output, data classification from BAM and NFR standards from MCP tools when you don't supply them. Add anything else here, for example naming standards.</span>
+          <input name="frameworks" placeholder="e.g. application IDs from the APM inventory">
+        </label>
+        <fieldset>
+          <legend>Document control</legend>
+          <div class="grid4">
+            <label>Version <input name="version" placeholder="0.1"></label>
+            <label>Author <input name="author"></label>
+            <label>Status <input name="status" placeholder="Draft"></label>
+            <label>Reviewers <input name="reviewers"></label>
+          </div>
+        </fieldset>
+        <div id="intakeError" class="alert alert-stop" hidden></div>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">Start generation</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Phase work view -->
+    <section id="phaseView" class="card" hidden>
+      <div class="phase-head">
+        <div>
+          <p class="eyebrow" id="phaseEyebrow"></p>
+          <h2 id="phaseTitle"></h2>
+          <p class="hint" id="phaseNeeds"></p>
+        </div>
+        <span id="phaseBadge" class="badge"></span>
+      </div>
+
+      <div id="phaseStop" class="alert alert-stop" hidden>
+        <strong>Generation paused — input needed.</strong>
+        The skill will not continue until you answer the questions below (or tell it which items to defer as <code>[TBC]</code>).
+      </div>
+
+      <div id="questionsBox" class="questions" hidden>
+        <h3>Questions from the skill</h3>
+        <div id="questionsBody" class="md"></div>
+      </div>
+
+      <div id="streamBox" class="stream" hidden>
+        <div class="spinner"></div><span id="streamLabel">Generating…</span>
+        <pre id="streamText"></pre>
+      </div>
+
+      <p id="toolsNote" class="tools-note" hidden></p>
+
+      <details id="autoBox" class="auto-box" hidden>
+        <summary id="autoSummary"></summary>
+        <div id="autoBody" class="md"></div>
+      </details>
+
+      <div id="sectionBox" hidden>
+        <h3 class="draft-label">Section draft</h3>
+        <div id="sectionBody" class="md doc"></div>
+      </div>
+
+      <!-- Manual mode: when the page is opened outside Claude -->
+      <div id="manualBox" class="manual" hidden>
+        <h3>Manual mode</h3>
+        <p class="hint">This page can't reach Claude from here. Copy the prompt, paste it into a Claude chat, then paste Claude's full reply below.</p>
+        <div class="actions left">
+          <button id="copyPromptBtn" class="btn" type="button">Copy prompt</button>
+          <span id="copyPromptMsg" class="hint"></span>
+        </div>
+        <textarea id="manualResponse" rows="8" placeholder="Paste Claude's reply here (it starts with STATUS:)"></textarea>
+        <div class="actions left"><button id="useManualBtn" class="btn btn-primary" type="button">Use this response</button></div>
+      </div>
+
+      <div id="replyBox" class="reply" hidden>
+        <label id="replyLabel" for="replyText">Your answers</label>
+        <textarea id="replyText" rows="6"></textarea>
+        <div id="replyError" class="alert alert-stop" hidden></div>
+        <div class="actions">
+          <button id="sendReplyBtn" class="btn" type="button">Submit answers</button>
+          <button id="approveBtn" class="btn btn-primary" type="button">Approve &amp; continue</button>
+        </div>
+      </div>
+
+      <div id="readOnlyNote" class="hint" hidden>This phase is approved. Select the current phase in the tracker to continue.</div>
+      <div id="errorBox" class="alert alert-stop" hidden></div>
+    </section>
+
+    <!-- Final document view -->
+    <section id="docView" class="card" hidden>
+      <div class="phase-head">
+        <div><p class="eyebrow">Deliverable</p><h2>L3 Domain Architecture Specification</h2></div>
+        <div class="actions">
+          <button id="copyDocBtn" class="btn" type="button">Copy Markdown</button>
+          <button id="downloadDocBtn" class="btn btn-primary" type="button">Download .md</button>
+        </div>
+      </div>
+      <p id="docMsg" class="hint"></p>
+      <div id="docBody" class="md doc"></div>
+    </section>
+  </main>
+</div>
+
+<script src="skill/skill.js"></script>
+<script src="samples/claims-management/sample.js"></script>
+<script src="js/phases.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
